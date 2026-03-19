@@ -1,0 +1,849 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>BugEye — AI Code Review</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --surface2: #1c2129;
+      --border: #30363d;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --blue: #58a6ff;
+      --green: #3fb950;
+      --red: #f85149;
+      --purple: #a371f7;
+    }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 32px 20px 60px;
+    }
+
+    /* ── Header ── */
+    .header {
+      text-align: center;
+      margin-bottom: 36px;
+    }
+
+    .logo {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+
+    .logo-icon {
+      width: 38px; height: 38px;
+      background: linear-gradient(135deg, #58a6ff, #a371f7);
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px;
+    }
+
+    .logo h1 {
+      font-size: 28px;
+      font-weight: 700;
+      background: linear-gradient(90deg, #58a6ff, #a371f7);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      color: transparent;
+    }
+
+    .header p {
+      color: var(--muted);
+      font-size: 14px;
+      margin-bottom: 14px;
+    }
+
+    .pill-row {
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .pill {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 3px 12px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    /* ── Input card ── */
+    .input-card {
+      max-width: 680px;
+      margin: 0 auto 24px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 24px;
+    }
+
+    .field label {
+      display: block;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      margin-bottom: 6px;
+    }
+
+    .field input {
+      width: 100%;
+      padding: 10px 14px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.2s;
+      margin-bottom: 12px;
+    }
+
+    .field input:focus { border-color: var(--blue); }
+    .field input::placeholder { color: #484f58; }
+
+    .hint {
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 16px;
+    }
+
+    .hint span { color: var(--blue); }
+
+    .btn {
+      width: 100%;
+      padding: 12px;
+      background: linear-gradient(135deg, #1a7f37, #2ea043);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+
+    .btn:hover { opacity: 0.88; }
+    .btn:disabled { background: var(--surface2); color: var(--muted); cursor: not-allowed; opacity: 1; }
+
+    /* ── Pipeline ── */
+    .pipeline {
+      max-width: 680px;
+      margin: 0 auto 24px;
+      display: none;
+    }
+
+    .pipeline.active { display: block; }
+
+    .pipeline-title {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: var(--muted);
+      margin-bottom: 10px;
+    }
+
+    .agent-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      margin-bottom: 6px;
+      overflow: hidden;
+      transition: border-color 0.3s;
+    }
+
+    .agent-card.running { border-color: var(--blue); }
+    .agent-card.done    { border-color: var(--green); }
+    .agent-card.failed  { border-color: var(--red); }
+
+    .agent-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+    }
+
+    .agent-icon {
+      width: 26px; height: 26px;
+      border-radius: 6px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px;
+      flex-shrink: 0;
+      background: var(--surface2);
+    }
+
+    .agent-card.running .agent-icon { background: rgba(88,166,255,0.15); }
+    .agent-card.done    .agent-icon { background: rgba(63,185,80,0.15); }
+    .agent-card.failed  .agent-icon { background: rgba(248,81,73,0.15); }
+
+    .agent-name { font-size: 13px; font-weight: 600; flex: 1; }
+    .agent-status { font-size: 12px; color: var(--muted); }
+    .agent-card.running .agent-status { color: var(--blue); }
+    .agent-card.done    .agent-status { color: var(--green); }
+    .agent-card.failed  .agent-status { color: var(--red); }
+
+    .agent-steps { padding: 0 14px 10px 50px; display: none; }
+    .agent-card.running .agent-steps,
+    .agent-card.done    .agent-steps,
+    .agent-card.failed  .agent-steps { display: block; }
+
+    .step-line {
+      font-size: 12px;
+      color: var(--muted);
+      padding: 2px 0;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      opacity: 0;
+      transform: translateY(4px);
+      transition: opacity 0.3s, transform 0.3s;
+    }
+
+    .step-line.visible   { opacity: 1; transform: translateY(0); }
+    .step-line.current   { color: var(--blue); }
+    .step-line.done-step { color: var(--green); }
+
+    .dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+
+    .spin {
+      width: 11px; height: 11px;
+      border: 2px solid transparent;
+      border-top-color: var(--blue);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      flex-shrink: 0;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Error / RAG failed ── */
+    .banner {
+      max-width: 680px;
+      margin: 0 auto 16px;
+      border-radius: 10px;
+      padding: 14px 18px;
+      font-size: 14px;
+      display: none;
+    }
+
+    .banner.active { display: block; }
+    .banner.error  { background: rgba(248,81,73,0.08); border: 1px solid rgba(248,81,73,0.3); color: var(--red); }
+    .banner.error h3 { margin-bottom: 6px; font-size: 14px; }
+    .banner.error p  { font-size: 13px; color: #c9d1d9; line-height: 1.5; }
+
+    /* ── Main layout (side by side) ── */
+    .main-layout {
+      display: none;
+      max-width: 1300px;
+      margin: 0 auto;
+      gap: 20px;
+      align-items: flex-start;
+    }
+
+    .main-layout.active { display: flex; }
+
+    /* Results panel */
+    .results-panel { flex: 1.3; min-width: 0; }
+
+    .tabs {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 12px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 4px;
+    }
+
+    .tab {
+      flex: 1;
+      padding: 8px 10px;
+      text-align: center;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--muted);
+      border-radius: 7px;
+      cursor: pointer;
+      transition: all 0.2s;
+      border: none;
+      background: none;
+    }
+
+    .tab.active { background: var(--surface2); color: var(--text); }
+
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    .result-body {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 20px;
+      max-height: 75vh;
+      overflow-y: auto;
+    }
+
+    .result-body::-webkit-scrollbar { width: 4px; }
+    .result-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+    /* Markdown */
+    .result-body h1 { font-size: 18px; font-weight: 600; margin: 0 0 14px; color: var(--text); border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+    .result-body h2 { font-size: 16px; font-weight: 600; margin: 18px 0 8px; color: var(--text); }
+    .result-body h2:first-child { margin-top: 0; }
+    .result-body h3 { font-size: 14px; font-weight: 600; margin: 12px 0 6px; color: #c9d1d9; }
+    .result-body p  { font-size: 13px; color: #c9d1d9; line-height: 1.7; margin-bottom: 10px; }
+    .result-body ul, .result-body ol { padding-left: 18px; margin-bottom: 10px; }
+    .result-body li { font-size: 13px; color: #c9d1d9; line-height: 1.8; }
+    .result-body strong { color: var(--text); }
+    .result-body hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
+    .result-body code { background: #1f2937; color: #79c0ff; padding: 2px 5px; border-radius: 4px; font-size: 12px; font-family: 'Cascadia Code','Courier New',monospace; }
+    .result-body pre { background: #0d1117; border: 1px solid var(--border); border-radius: 8px; padding: 14px; overflow-x: auto; margin: 8px 0; }
+    .result-body pre code { background: none; padding: 0; color: #c9d1d9; font-size: 12px; }
+
+    /* Diff */
+    .diff-view { font-family: 'Cascadia Code','Courier New',monospace; font-size: 12px; line-height: 1.6; }
+    .diff-line { padding: 2px 10px; display: block; white-space: pre; }
+    .diff-line.added   { background: rgba(63,185,80,0.1);  color: #3fb950; border-left: 3px solid #3fb950; }
+    .diff-line.removed { background: rgba(248,81,73,0.1);  color: #f85149; border-left: 3px solid #f85149; }
+    .diff-line.neutral { color: var(--muted); }
+
+    /* Chat panel */
+    .chat-panel {
+      width: 360px;
+      flex-shrink: 0;
+      position: sticky;
+      top: 20px;
+    }
+
+    .chat-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+
+    .chat-header h2 { font-size: 15px; font-weight: 600; }
+    .chat-header p  { font-size: 12px; color: var(--muted); }
+
+    .rag-badge {
+      background: rgba(163,113,247,0.15);
+      border: 1px solid rgba(163,113,247,0.3);
+      color: var(--purple);
+      border-radius: 20px;
+      padding: 2px 10px;
+      font-size: 11px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .chat-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      height: 75vh;
+    }
+
+    .chat-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .chat-messages::-webkit-scrollbar { width: 4px; }
+    .chat-messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+    .msg { display: flex; gap: 8px; }
+    .msg.user { align-self: flex-end; flex-direction: row-reverse; max-width: 85%; }
+    .msg.bot  { max-width: 90%; }
+
+    .msg-avatar {
+      width: 26px; height: 26px;
+      border-radius: 7px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 12px;
+      flex-shrink: 0;
+    }
+
+    .msg.user .msg-avatar { background: rgba(88,166,255,0.2); }
+    .msg.bot  .msg-avatar { background: rgba(163,113,247,0.2); }
+
+    .msg-bubble {
+      padding: 9px 12px;
+      border-radius: 10px;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    .msg.user .msg-bubble { background: rgba(88,166,255,0.12); color: var(--text); border: 1px solid rgba(88,166,255,0.2); }
+    .msg.bot  .msg-bubble { background: var(--surface2); color: #c9d1d9; border: 1px solid var(--border); }
+    .msg.bot  .msg-bubble p { margin: 0 0 6px; font-size: 13px; }
+    .msg.bot  .msg-bubble p:last-child { margin: 0; }
+    .msg.bot  .msg-bubble code { background: #0d1117; color: #79c0ff; padding: 1px 4px; border-radius: 3px; font-size: 11px; }
+
+    .typing { display: flex; gap: 4px; align-items: center; }
+    .typing span { width: 5px; height: 5px; border-radius: 50%; background: var(--muted); animation: bounce 1s infinite; }
+    .typing span:nth-child(2) { animation-delay: 0.15s; }
+    .typing span:nth-child(3) { animation-delay: 0.3s; }
+    @keyframes bounce { 0%,60%,100%{ transform:translateY(0); } 30%{ transform:translateY(-5px); } }
+
+    .chat-suggestions {
+      padding: 10px 14px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      background: var(--surface2);
+    }
+
+    .suggestion {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 3px 10px;
+      font-size: 11px;
+      color: var(--muted);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .suggestion:hover { border-color: var(--purple); color: var(--purple); }
+
+    .chat-input-row {
+      display: flex;
+      gap: 8px;
+      padding: 12px;
+      border-top: 1px solid var(--border);
+      background: var(--surface2);
+    }
+
+    .chat-input {
+      flex: 1;
+      padding: 9px 12px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 13px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .chat-input:focus { border-color: var(--purple); }
+    .chat-input::placeholder { color: #484f58; }
+
+    .chat-send {
+      padding: 9px 16px;
+      background: rgba(163,113,247,0.2);
+      border: 1px solid rgba(163,113,247,0.3);
+      color: var(--purple);
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+      white-space: nowrap;
+    }
+
+    .chat-send:hover { background: rgba(163,113,247,0.3); }
+    .chat-send:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    @media (max-width: 900px) {
+      .main-layout.active { flex-direction: column; }
+      .chat-panel { width: 100%; position: static; }
+      .chat-box { height: 420px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <div class="logo">
+    <div class="logo-icon">🐛</div>
+    <h1>BugEye</h1>
+  </div>
+  <p>Multi-agent AI code review — security scanning, smart fixes, and codebase chat</p>
+  <div class="pill-row">
+    <span class="pill">⚡ Groq LLM</span>
+    <span class="pill">🧠 RAG</span>
+    <span class="pill">🔒 Security Scanner</span>
+    <span class="pill">🐙 GitHub API</span>
+    <span class="pill">💬 Codebase Chat</span>
+  </div>
+</div>
+
+<!-- Input -->
+<div class="input-card">
+  <div class="field">
+    <label>GitHub Repository</label>
+    <input type="text" id="repo" placeholder="owner/repo  e.g. panwaar/Portfolio" onkeydown="if(event.key==='Enter') startReview()"/>
+  </div>
+  <p class="hint">RAG indexes your <span>entire codebase</span> first — then generates review + enables chat</p>
+  <button class="btn" id="btn" onclick="startReview()">🔍 Analyze Repository</button>
+</div>
+
+<!-- Error banner -->
+<div class="banner error" id="error-banner"></div>
+
+<!-- RAG failed banner -->
+<div class="banner error" id="rag-banner">
+  <h3>❌ RAG Indexing Failed — Analysis Stopped</h3>
+  <p id="rag-banner-msg"></p>
+  <p style="margin-top:6px;color:var(--muted);font-size:12px">Check the repo name is correct and public, then try again.</p>
+</div>
+
+<!-- Pipeline -->
+<div class="pipeline" id="pipeline">
+  <p class="pipeline-title">Agent pipeline</p>
+  <div class="agent-card" id="card-rag">
+    <div class="agent-header">
+      <div class="agent-icon">🧠</div>
+      <span class="agent-name">RAG Agent</span>
+      <span class="agent-status" id="status-rag">Waiting...</span>
+    </div>
+    <div class="agent-steps" id="steps-rag"></div>
+  </div>
+  <div class="agent-card" id="card-fetch">
+    <div class="agent-header">
+      <div class="agent-icon">📂</div>
+      <span class="agent-name">Fetch Agent</span>
+      <span class="agent-status" id="status-fetch">Waiting...</span>
+    </div>
+    <div class="agent-steps" id="steps-fetch"></div>
+  </div>
+  <div class="agent-card" id="card-security">
+    <div class="agent-header">
+      <div class="agent-icon">🔒</div>
+      <span class="agent-name">Security Scanner</span>
+      <span class="agent-status" id="status-security">Waiting...</span>
+    </div>
+    <div class="agent-steps" id="steps-security"></div>
+  </div>
+  <div class="agent-card" id="card-review">
+    <div class="agent-header">
+      <div class="agent-icon">📝</div>
+      <span class="agent-name">Review Agent</span>
+      <span class="agent-status" id="status-review">Waiting...</span>
+    </div>
+    <div class="agent-steps" id="steps-review"></div>
+  </div>
+  <div class="agent-card" id="card-critic">
+    <div class="agent-header">
+      <div class="agent-icon">🎯</div>
+      <span class="agent-name">Critic Agent</span>
+      <span class="agent-status" id="status-critic">Waiting...</span>
+    </div>
+    <div class="agent-steps" id="steps-critic"></div>
+  </div>
+  <div class="agent-card" id="card-fixes">
+    <div class="agent-header">
+      <div class="agent-icon">🔧</div>
+      <span class="agent-name">Fix Suggester</span>
+      <span class="agent-status" id="status-fixes">Waiting...</span>
+    </div>
+    <div class="agent-steps" id="steps-fixes"></div>
+  </div>
+</div>
+
+<!-- Main layout: Results + Chat side by side -->
+<div class="main-layout" id="main-layout">
+
+  <!-- Results panel -->
+  <div class="results-panel">
+    <div class="tabs">
+      <button class="tab active" onclick="switchTab('review')">📝 Code Review</button>
+      <button class="tab" onclick="switchTab('security')">🔒 Security Report</button>
+      <button class="tab" onclick="switchTab('fixes')">🔧 Code Fixes</button>
+    </div>
+    <div class="tab-content active" id="tab-review">
+      <div class="result-body" id="body-review"></div>
+    </div>
+    <div class="tab-content" id="tab-security">
+      <div class="result-body" id="body-security"></div>
+    </div>
+    <div class="tab-content" id="tab-fixes">
+      <div class="result-body" id="body-fixes"></div>
+    </div>
+  </div>
+
+  <!-- Chat panel -->
+  <div class="chat-panel">
+    <div class="chat-header">
+      <div>
+        <h2>💬 Chat with Codebase</h2>
+        <p>Ask anything — powered by RAG</p>
+      </div>
+      <span class="rag-badge">RAG Enabled</span>
+    </div>
+    <div class="chat-box">
+      <div class="chat-messages" id="chat-messages">
+        <div class="msg bot">
+          <div class="msg-avatar">🧠</div>
+          <div class="msg-bubble">Codebase indexed! Ask me anything about the code.</div>
+        </div>
+      </div>
+      <div class="chat-suggestions">
+        <span class="suggestion" onclick="askSuggestion(this)">How is auth handled?</span>
+        <span class="suggestion" onclick="askSuggestion(this)">Main entry point?</span>
+        <span class="suggestion" onclick="askSuggestion(this)">Any security risks?</span>
+        <span class="suggestion" onclick="askSuggestion(this)">Folder structure?</span>
+      </div>
+      <div class="chat-input-row">
+        <input class="chat-input" id="chat-input" placeholder="Ask about the codebase..." onkeydown="if(event.key==='Enter') sendChat()"/>
+        <button class="chat-send" id="chat-send" onclick="sendChat()">Send</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  function switchTab(name) {
+    document.querySelectorAll('.tab').forEach(function(t, i) {
+      t.classList.toggle('active', ['review','security','fixes'][i] === name);
+    });
+    document.querySelectorAll('.tab-content').forEach(function(c) {
+      c.classList.remove('active');
+    });
+    document.getElementById('tab-' + name).classList.add('active');
+  }
+
+  function setAgentRunning(agent, msg) {
+    document.getElementById('card-' + agent).className = 'agent-card running';
+    document.getElementById('status-' + agent).textContent = msg;
+  }
+
+  function setAgentDone(agent, msg) {
+    document.getElementById('card-' + agent).className = 'agent-card done';
+    document.getElementById('status-' + agent).textContent = '✓ ' + msg;
+    document.getElementById('steps-' + agent).querySelectorAll('.step-line').forEach(function(l) {
+      l.classList.remove('current');
+      l.classList.add('done-step');
+      var s = l.querySelector('.spin');
+      if (s) s.outerHTML = '<span class="dot"></span>';
+    });
+  }
+
+  function setAgentFailed(agent, msg) {
+    document.getElementById('card-' + agent).className = 'agent-card failed';
+    document.getElementById('status-' + agent).textContent = '✗ ' + msg;
+    document.getElementById('steps-' + agent).querySelectorAll('.step-line').forEach(function(l) {
+      l.classList.remove('current');
+      var s = l.querySelector('.spin');
+      if (s) s.outerHTML = '<span class="dot"></span>';
+    });
+  }
+
+  function addStep(agent, msg) {
+    var steps = document.getElementById('steps-' + agent);
+    var prev = steps.querySelector('.current');
+    if (prev) {
+      prev.classList.remove('current');
+      prev.classList.add('done-step');
+      var s = prev.querySelector('.spin');
+      if (s) s.outerHTML = '<span class="dot"></span>';
+    }
+    var line = document.createElement('div');
+    line.className = 'step-line current';
+    line.innerHTML = '<span class="spin"></span>' + msg;
+    steps.appendChild(line);
+    setTimeout(function() { line.classList.add('visible'); }, 30);
+  }
+
+  function escHtml(t) {
+    return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  function renderDiff(text) {
+    var html = '<div class="diff-view">';
+    text.split('\n').forEach(function(line) {
+      if (line.startsWith('+') && !line.startsWith('+++')) {
+        html += '<span class="diff-line added">' + escHtml(line) + '</span>';
+      } else if (line.startsWith('-') && !line.startsWith('---')) {
+        html += '<span class="diff-line removed">' + escHtml(line) + '</span>';
+      } else {
+        html += '<span class="diff-line neutral">' + escHtml(line) + '</span>';
+      }
+    });
+    return html + '</div>';
+  }
+
+  function renderMarkdownWithDiff(text) {
+    var processed = text.replace(/```diff\n([\s\S]*?)```/g, function(_, code) {
+      return '<div class="diff-view">' + renderDiff(code) + '</div>';
+    });
+
+    var div = document.createElement('div');
+    div.innerHTML = marked.parse(processed);
+
+    var lastType = null;
+    div.childNodes.forEach(function(node) {
+      if (node.nodeType !== 1) return;
+      var t = node.textContent.trim().toLowerCase();
+      if (t.includes('current code') || t.includes('❌')) lastType = 'red';
+      else if (t.includes('suggested fix') || t.includes('✅') || t.includes('suggested code')) lastType = 'green';
+      if (node.tagName === 'PRE' && lastType) {
+        node.style.background = lastType === 'red' ? 'rgba(248,81,73,0.08)' : 'rgba(63,185,80,0.08)';
+        node.style.borderLeft = lastType === 'red' ? '3px solid #f85149' : '3px solid #3fb950';
+        var code = node.querySelector('code');
+        if (code) code.style.color = lastType === 'red' ? '#f85149' : '#3fb950';
+        lastType = null;
+      }
+    });
+
+    return div.innerHTML;
+  }
+
+  function startReview() {
+    var repo = document.getElementById('repo').value.trim();
+    var btn = document.getElementById('btn');
+
+    document.getElementById('error-banner').classList.remove('active');
+    document.getElementById('rag-banner').classList.remove('active');
+    document.getElementById('main-layout').classList.remove('active');
+
+    if (!repo) {
+      var eb = document.getElementById('error-banner');
+      eb.textContent = '⚠️ Please enter a repository e.g. panwaar/Portfolio';
+      eb.classList.add('active');
+      return;
+    }
+
+    ['rag','fetch','security','review','critic','fixes'].forEach(function(a) {
+      document.getElementById('card-' + a).className = 'agent-card';
+      document.getElementById('status-' + a).textContent = 'Waiting...';
+      document.getElementById('steps-' + a).innerHTML = '';
+    });
+
+    btn.disabled = true;
+    btn.textContent = 'Running agents...';
+    document.getElementById('pipeline').classList.add('active');
+
+    var es = new EventSource('/review?repo=' + encodeURIComponent(repo) + '&pr=');
+
+    es.onmessage = function(e) {
+      var d = JSON.parse(e.data);
+
+      if (d.event === 'agent_start') {
+        setAgentRunning(d.agent, d.message);
+      } else if (d.event === 'agent_step') {
+        addStep(d.agent, d.message);
+      } else if (d.event === 'agent_done') {
+        setAgentDone(d.agent, d.message);
+      } else if (d.event === 'rag_failed') {
+        setAgentFailed('rag', 'Failed');
+        document.getElementById('rag-banner-msg').textContent = d.message;
+        document.getElementById('rag-banner').classList.add('active');
+        btn.disabled = false;
+        btn.textContent = '🔍 Analyze Repository';
+        es.close();
+      } else if (d.event === 'complete') {
+        document.getElementById('body-review').innerHTML = renderMarkdownWithDiff(d.review);
+        document.getElementById('body-security').innerHTML = renderMarkdownWithDiff(d.security);
+        document.getElementById('body-fixes').innerHTML = renderMarkdownWithDiff(d.fixes);
+        document.getElementById('chat-messages').innerHTML = '<div class="msg bot"><div class="msg-avatar">🧠</div><div class="msg-bubble">Codebase indexed! Ask me anything about the code.</div></div>';
+        document.getElementById('main-layout').classList.add('active');
+        document.getElementById('main-layout').scrollIntoView({ behavior: 'smooth' });
+        btn.disabled = false;
+        btn.textContent = '🔍 Analyze Repository';
+        es.close();
+      } else if (d.event === 'error') {
+        var eb = document.getElementById('error-banner');
+        eb.textContent = '❌ ' + d.message;
+        eb.classList.add('active');
+        btn.disabled = false;
+        btn.textContent = '🔍 Analyze Repository';
+        es.close();
+      }
+    };
+
+    es.onerror = function() {
+      es.close();
+      btn.disabled = false;
+      btn.textContent = '🔍 Analyze Repository';
+    };
+  }
+
+  function addMessage(text, isUser) {
+    var messages = document.getElementById('chat-messages');
+    var msg = document.createElement('div');
+    msg.className = 'msg ' + (isUser ? 'user' : 'bot');
+    var avatar = isUser ? '👤' : '🧠';
+    var bubble = isUser ? escHtml(text) : marked.parse(text);
+    msg.innerHTML = '<div class="msg-avatar">' + avatar + '</div><div class="msg-bubble">' + bubble + '</div>';
+    messages.appendChild(msg);
+    messages.scrollTop = messages.scrollHeight;
+  }
+
+  function addTyping() {
+    var messages = document.getElementById('chat-messages');
+    var msg = document.createElement('div');
+    msg.className = 'msg bot';
+    msg.id = 'typing-indicator';
+    msg.innerHTML = '<div class="msg-avatar">🧠</div><div class="msg-bubble"><div class="typing"><span></span><span></span><span></span></div></div>';
+    messages.appendChild(msg);
+    messages.scrollTop = messages.scrollHeight;
+  }
+
+  function removeTyping() {
+    var t = document.getElementById('typing-indicator');
+    if (t) t.remove();
+  }
+
+  function askSuggestion(el) {
+    document.getElementById('chat-input').value = el.textContent;
+    sendChat();
+  }
+
+  async function sendChat() {
+    var input = document.getElementById('chat-input');
+    var sendBtn = document.getElementById('chat-send');
+    var question = input.value.trim();
+    if (!question) return;
+    input.value = '';
+    sendBtn.disabled = true;
+    addMessage(question, true);
+    addTyping();
+    try {
+      var res = await fetch('/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: question })
+      });
+      var data = await res.json();
+      removeTyping();
+      addMessage(data.error ? '❌ ' + data.error : data.answer, false);
+    } catch(err) {
+      removeTyping();
+      addMessage('❌ Something went wrong.', false);
+    } finally {
+      sendBtn.disabled = false;
+      input.focus();
+    }
+  }
+</script>
+</body>
+</html>

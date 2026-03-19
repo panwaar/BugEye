@@ -1,0 +1,14 @@
+langchain>=0.2.0
+langchain-core>=0.2.0
+langchain-groq>=0.1.9
+langchain-community>=0.2.0
+langchain-text-splitters>=0.2.0
+langchain-huggingface>=0.0.3
+langgraph>=0.1.0
+PyGithub>=2.0.0
+python-dotenv>=1.0.0
+rich>=13.0.0
+flask>=3.0.0
+chromadb>=0.5.0
+gitpython>=3.1.0
+sentence-transformers>=2.0.0
