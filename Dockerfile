@@ -33,5 +33,6 @@ COPY --chown=user static ./static
 EXPOSE 7860
 
 # One worker: the vector indexes and rate limits live in process memory.
-# --proxy-headers lets uvicorn see https behind the Hugging Face proxy.
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "7860", "--proxy-headers", "--forwarded-allow-ips", "*"]
+# Client IPs for rate limiting are read from X-Forwarded-For by the app itself (PROXY_HOPS),
+# so uvicorn is not told to trust forwarded headers from arbitrary hosts.
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "7860"]

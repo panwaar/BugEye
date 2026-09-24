@@ -18,7 +18,7 @@ pinned: false
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.1xx-009688?style=for-the-badge&logo=fastapi)
 ![ChromaDB](https://img.shields.io/badge/ChromaDB-VectorDB-red?style=for-the-badge)
 
-**A pipeline of specialised LLM agents that indexes a GitHub repository with RAG, then produces a code review, a security report and concrete code fixes — streamed live to the browser.**
+**A pipeline of LLM agents that reviews every source file of a GitHub repository, verifies each finding against the real code, and produces a code review, a security report and concrete fixes — streamed live to the browser.**
 
 </div>
 
@@ -26,16 +26,14 @@ pinned: false
 
 ## ✨ Features
 
-- 🧠 **RAG indexing** — shallow-clones the repo, splits code into line-numbered chunks, and embeds them locally (`all-MiniLM-L6-v2`) into ChromaDB
-- 🔒 **Security scanner** — searches the index for security-relevant code (secrets, SQL, shell, auth, input handling) and reports findings by severity
-- 📝 **Code review** — reviews the most relevant code, citing real file names and line ranges
-- 🔀 **Pull request review** — give a PR number to review its diff, with related code pulled in as context
-- 🎯 **Critic agent** — checks the draft review against the code and removes unsupported claims
-- 🔧 **Fix suggester** — before/after code replacements with red/green highlighting
-- 💬 **Codebase chat** — ask questions about the indexed repository
-- ⚡ **Live progress** — every pipeline step is streamed to the UI as it happens
-
-> BugEye sends the LLM the **most relevant excerpts** of the repository (plus the full file list), not every file — Groq's token limits make that impossible for real repositories. The amount is configurable with `MAX_CONTEXT_CHARS`.
+- 📂 **Full-repository review** — every source file is sent to the model in full, in batches sized to fit Groq's token limits
+- ✅ **Verified findings** — each finding must quote real code; quotes that don't exist in the repo are dropped, and a skeptical second model pass rejects unsupported claims
+- 📍 **Exact locations** — file and line numbers are computed from the real file, never taken from the model
+- 🔒 **Security report** — injection, XSS, secrets, auth and other vulnerabilities, by severity
+- 🔧 **Code fixes** — the "current code" shown is copied from the file; the model only writes the replacement
+- 🔀 **Pull request review** — give a PR number to review just the changed files, with their diffs
+- 💬 **Codebase chat** — RAG over the indexed repository (local embeddings + ChromaDB)
+- ⚡ **Live progress** — every step is streamed to the UI as it happens
 
 ---
 
@@ -44,19 +42,20 @@ pinned: false
 ```
 POST /api/review ──▶ run_review()  (agents/orchestrator.py — yields progress events)
                         │
-   1. RAG Agent         │  shallow clone → load files → chunk (with line numbers) → embed → Chroma
-   2. Context Agent     │  PR diff (optional) + similarity searches → overview & security excerpts
-   3. Security Scanner  │  LLM call on security-focused excerpts
-   4. Review Agent      │  LLM call on overview excerpts (+ PR diff)
-   5. Critic Agent      │  LLM call: verify the review against the same excerpts   (optional)
-   6. Fix Suggester     │  LLM call: before/after fixes for the reviewed issues    (optional)
+   1. RAG Agent         │  shallow clone → load files → chunk → embed → Chroma (for chat)
+   2. Planner           │  every reviewable file (or the PR's changed files) → batches of whole files,
+                        │  plus a map of the names each file defines
+   3. Reviewer          │  one LLM call per batch → JSON findings, each quoting the code it is about
+   4. Verifier          │  drop findings whose quote isn't in the repo → dedupe →
+                        │  skeptical LLM pass with the real surrounding code
+   5. Report Writer     │  plain Python: Markdown reports built only from verified findings
                         ▼
               Server-Sent Events ──▶ browser (or the CLI)
 
 POST /api/chat ──▶ answer_question()  — searches the repo's index and asks the LLM
 ```
 
-Indexes are kept in memory per repository (most recent `MAX_INDEXED_REPOS`), so chat always answers about the repository you analysed.
+Large repositories are capped by `MAX_REVIEW_CHARS` (application code is reviewed first, then config, then tests); anything skipped is listed in the report. On Groq's free tier a full review of a small repository takes a few minutes because of per-minute token limits.
 
 ---
 
@@ -71,7 +70,11 @@ BugEye/
 ├── dependencies.py         # FastAPI dependencies: app state, rate limits
 ├── middleware.py           # Security headers (CSP etc.)
 ├── agents/
-│   ├── orchestrator.py     # Runs the 6 agents in order, streams progress
+│   ├── orchestrator.py     # Runs the pipeline stages in order, streams progress
+│   ├── reviewer.py         # Plans batches covering every file, reviews each batch
+│   ├── verifier.py         # Checks findings against the real code
+│   ├── findings.py         # Finding model, evidence matching, de-duplication
+│   ├── report_writer.py    # Builds the review / security / fixes reports
 │   ├── chat_agent.py       # Codebase Q&A
 │   └── prompts.py          # System prompt for each agent
 ├── services/
@@ -142,7 +145,8 @@ All settings are environment variables — see [.env.example](.env.example) for 
 | `GITHUB_TOKEN` | Optional, for PR review rate limits |
 | `REVIEW_LIMIT_PER_HOUR` / `CHAT_LIMIT_PER_HOUR` | Per-visitor rate limits — default 5 analyses and 60 questions per hour (`0` disables) |
 | `MAX_CONCURRENT_REVIEWS` | Analyses allowed to run at once |
-| `MAX_CONTEXT_CHARS` | Code sent to the LLM per call |
+| `REVIEW_BATCH_CHARS` | Code per review request (lower it if Groq reports a request is too large) |
+| `MAX_REVIEW_CHARS` | Total code reviewed per repository |
 
 ---
 

@@ -21,9 +21,13 @@ class Settings:
     chunk_overlap: int = 100
     max_indexed_repos: int = 5
 
-    # How much code is sent to the LLM per call (keeps requests inside Groq's token limits)
+    # Full review: every source file is sent to the LLM, in batches of at most review_batch_chars
+    # (keeps each request inside Groq's token limits), up to max_review_chars per repository.
+    review_batch_chars: int = 12000
+    max_review_chars: int = 150_000
+    max_pr_diff_chars: int = 4000  # Per changed file, in PR mode
+    # Code sent to the LLM when answering a chat question
     max_context_chars: int = 8000
-    max_pr_diff_chars: int = 8000
 
     # Abuse protection; a limit of 0 disables it
     review_limit_per_hour: int = 5

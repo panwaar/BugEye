@@ -1,29 +1,9 @@
-"""Choosing which code chunks to send to the LLM and formatting them."""
+"""Finding the code chunks relevant to a chat question and formatting them for the LLM."""
 from collections.abc import Sequence
 
 from langchain_core.documents import Document
 
 from rag.vector_store import RepoIndex
-
-OVERVIEW_QUERIES = (
-    "application entry point main function server startup",
-    "configuration settings environment variables",
-    "core business logic classes and functions",
-    "error handling exceptions try except catch",
-    "database models queries persistence",
-    "API routes request handlers",
-)
-
-SECURITY_QUERIES = (
-    "password secret api key token credentials",
-    "sql query execute raw string formatting",
-    "subprocess shell exec eval command execution",
-    "authentication login session cookie jwt authorization",
-    "user input request parameters validation",
-    "html template rendering innerHTML unescaped output",
-    "file path open read write upload",
-)
-
 
 def retrieve(index: RepoIndex, queries: Sequence[str], *, k_per_query: int = 4, max_chars: int) -> list[Document]:
     """Run several queries and merge results round-robin (best hit of each query first),
@@ -57,9 +37,3 @@ def format_chunks(chunks: Sequence[Document]) -> str:
         return "(no relevant code found)"
     return "\n\n".join(f"### {format_location(c)}\n```\n{c.page_content}\n```" for c in chunks)
 
-
-def format_file_list(files: Sequence[str], limit: int = 150) -> str:
-    listed = "\n".join(f"- {f}" for f in files[:limit])
-    if len(files) > limit:
-        listed += f"\n- ... and {len(files) - limit} more"
-    return listed

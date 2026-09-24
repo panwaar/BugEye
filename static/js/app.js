@@ -1,6 +1,6 @@
 'use strict';
 
-const AGENTS = ['rag', 'fetch', 'security', 'review', 'critic', 'fixes'];
+const AGENTS = ['rag', 'plan', 'review', 'verify', 'report'];
 const TERMINAL_EVENTS = new Set(['complete', 'error', 'rag_failed']);
 const GREETING = 'Codebase indexed. Ask me anything about the code.';
 

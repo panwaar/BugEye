@@ -41,7 +41,7 @@
       <input type="text" id="pr" inputmode="numeric" placeholder="e.g. 42" autocomplete="off"/>
     </div>
   </div>
-  <p class="hint">RAG indexes the repository first, then the most relevant code is sent to the review agents. Add a PR number to review that pull request's changes.</p>
+  <p class="hint">Every source file is reviewed in full, and each finding is checked against the real code before it is shown. Add a PR number to review only that pull request's changes.</p>
   <button class="btn" id="btn" type="submit">Analyze Repository</button>
 </form>
 
@@ -55,11 +55,10 @@
 
 {% set agents = [
   ("rag", "R", "RAG Agent"),
-  ("fetch", "F", "Context Agent"),
-  ("security", "S", "Security Scanner"),
-  ("review", "V", "Review Agent"),
-  ("critic", "C", "Critic Agent"),
-  ("fixes", "X", "Fix Suggester"),
+  ("plan", "P", "Planner"),
+  ("review", "V", "Reviewer"),
+  ("verify", "C", "Verifier"),
+  ("report", "W", "Report Writer"),
 ] %}
 <div class="pipeline" id="pipeline">
   <p class="pipeline-title">Agent pipeline</p>

@@ -21,7 +21,6 @@ _NAME = r"[A-Za-z0-9._-]{1,100}"
 _SHORT_RE = re.compile(rf"^({_OWNER})/({_NAME})/?$")
 _URL_RE = re.compile(rf"^(?:https?://)?(?:www\.)?github\.com/({_OWNER})/({_NAME})(?:[/?#].*)?$", re.IGNORECASE)
 
-_MAX_PATCH_CHARS_PER_FILE = 3000
 
 
 def parse_repo(value: str) -> str:
@@ -83,14 +82,18 @@ def _make_writable_and_retry(func, path, _exc_info):
 class PullRequest:
     number: int
     title: str
-    changed_files: list[str]
-    markdown: str  # Title, description and (truncated) diffs, ready to hand to the LLM
+    summary: str  # Title, author, branches and description, ready to hand to the LLM
+    patches: dict[str, str]  # Changed file path -> its (possibly truncated) unified diff
+
+    @property
+    def changed_files(self) -> list[str]:
+        return list(self.patches)
 
 
-def fetch_pull_request(repo_name: str, number: int, *, token: str | None, max_chars: int) -> PullRequest:
+def fetch_pull_request(repo_name: str, number: int, *, token: str | None, max_patch_chars: int) -> PullRequest:
     client = Github(auth=Auth.Token(token), timeout=15) if token else Github(timeout=15)
     try:
-        return _load(client, repo_name, number, max_chars)
+        return _load(client, repo_name, number, max_patch_chars)
     except GithubException as e:
         if e.status == 404:
             raise BugEyeError(f"PR #{number} was not found in {repo_name}.", status_code=404) from e
@@ -102,38 +105,19 @@ def fetch_pull_request(repo_name: str, number: int, *, token: str | None, max_ch
         client.close()
 
 
-def _load(client: Github, repo_name: str, number: int, max_chars: int) -> PullRequest:
+def _load(client: Github, repo_name: str, number: int, max_patch_chars: int) -> PullRequest:
     pr = client.get_repo(repo_name).get_pull(number)
-    files = list(pr.get_files())
-
-    lines = [
-        f"### PR #{number}: {pr.title}",
+    summary = "\n".join([
+        f"PR #{number}: {pr.title}",
         f"Author: {pr.user.login} | Branch: {pr.head.ref} -> {pr.base.ref}",
         f"Changes: +{pr.additions} -{pr.deletions} across {pr.changed_files} files",
-        "",
         "Description:",
         pr.body.strip() if pr.body else "(none provided)",
-        "",
-    ]
-    budget = max_chars
-    omitted = 0
-    for file in files:
-        header = f"#### `{file.filename}` ({file.status}, +{file.additions} -{file.deletions})"
+    ])
+    patches = {}
+    for file in pr.get_files():
         patch = file.patch or "(binary file or no diff available)"
-        if len(patch) > _MAX_PATCH_CHARS_PER_FILE:
-            patch = patch[:_MAX_PATCH_CHARS_PER_FILE] + "\n... (diff truncated)"
-        block = f"{header}\n```diff\n{patch}\n```"
-        if len(block) > budget:
-            omitted += 1
-            continue
-        budget -= len(block)
-        lines.append(block)
-    if omitted:
-        lines.append(f"({omitted} more changed files omitted to stay within the context limit)")
-
-    return PullRequest(
-        number=number,
-        title=pr.title,
-        changed_files=[f.filename for f in files],
-        markdown="\n".join(lines),
-    )
+        if len(patch) > max_patch_chars:
+            patch = patch[:max_patch_chars] + "\n... (diff truncated)"
+        patches[file.filename] = patch
+    return PullRequest(number=number, title=pr.title, summary=summary, patches=patches)
