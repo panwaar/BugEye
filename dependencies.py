@@ -1,13 +1,11 @@
-"""FastAPI dependencies: shared app state, access-token auth and per-client rate limits."""
-import hmac
+"""FastAPI dependencies: shared app state and per-client rate limits."""
 import threading
 import time
 from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from fastapi import Request, Security
-from fastapi.security import APIKeyHeader
+from fastapi import Request
 
 from config import Settings
 from exceptions import BugEyeError
@@ -79,20 +77,6 @@ class AppState:
 
 def get_state(request: Request) -> AppState:
     return request.app.state.bugeye
-
-
-# ── Auth ─────────────────────────────────────────────────────
-
-access_token_header = APIKeyHeader(name="X-Access-Token", auto_error=False)
-
-
-def require_access_token(request: Request, provided: str | None = Security(access_token_header)) -> None:
-    """When ACCESS_TOKEN is configured, reject requests that don't send it."""
-    expected = get_state(request).settings.access_token
-    if not expected:
-        return
-    if not provided or not hmac.compare_digest(provided.encode(), expected.encode()):
-        raise BugEyeError("A valid access token is required.", status_code=401)
 
 
 # ── Rate limits ──────────────────────────────────────────────

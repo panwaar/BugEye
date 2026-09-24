@@ -11,8 +11,6 @@ class Settings:
     groq_api_key: str | None = None
     groq_model: str = "openai/gpt-oss-120b"
     github_token: str | None = None
-    # When set, the web UI and API require this token in the X-Access-Token header.
-    access_token: str | None = None
     embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
 
     # Indexing limits
@@ -28,7 +26,7 @@ class Settings:
     max_pr_diff_chars: int = 8000
 
     # Abuse protection; a limit of 0 disables it
-    review_limit_per_hour: int = 10
+    review_limit_per_hour: int = 5
     chat_limit_per_hour: int = 60
     max_concurrent_reviews: int = 2
     # Number of reverse proxies in front of the app (Hugging Face Spaces has one)

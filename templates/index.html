@@ -41,12 +41,6 @@
       <input type="text" id="pr" inputmode="numeric" placeholder="e.g. 42" autocomplete="off"/>
     </div>
   </div>
-  {% if auth_required %}
-  <div class="field">
-    <label for="access-token">Access token</label>
-    <input type="password" id="access-token" placeholder="Required by this server" autocomplete="off"/>
-  </div>
-  {% endif %}
   <p class="hint">RAG indexes the repository first, then the most relevant code is sent to the review agents. Add a PR number to review that pull request's changes.</p>
   <button class="btn" id="btn" type="submit">Analyze Repository</button>
 </form>

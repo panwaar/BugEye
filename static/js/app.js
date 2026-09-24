@@ -108,12 +108,7 @@ function setBusy(busy) {
 
 // ── API ──────────────────────────────────────────────────────
 
-function apiHeaders() {
-  const headers = { 'Content-Type': 'application/json' };
-  const tokenInput = $('access-token');
-  if (tokenInput && tokenInput.value) headers['X-Access-Token'] = tokenInput.value;
-  return headers;
-}
+const JSON_HEADERS = { 'Content-Type': 'application/json' };
 
 async function errorFrom(response) {
   try {
@@ -127,7 +122,7 @@ async function errorFrom(response) {
 async function streamReview(repo, pr, onEvent) {
   const response = await fetch('/api/review', {
     method: 'POST',
-    headers: apiHeaders(),
+    headers: JSON_HEADERS,
     body: JSON.stringify({ repo, pr }),
   });
   if (!response.ok) throw new Error(await errorFrom(response));
@@ -249,7 +244,7 @@ async function sendChat(event) {
   try {
     const response = await fetch('/api/chat', {
       method: 'POST',
-      headers: apiHeaders(),
+      headers: JSON_HEADERS,
       body: JSON.stringify({ repo: currentRepo, question }),
     });
     typing.remove();

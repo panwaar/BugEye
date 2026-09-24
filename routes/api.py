@@ -13,7 +13,7 @@ from starlette.background import BackgroundTask
 
 from agents.chat_agent import answer_question
 from agents.orchestrator import run_review
-from dependencies import AppState, chat_rate_limit, get_state, require_access_token, review_rate_limit
+from dependencies import AppState, chat_rate_limit, get_state, review_rate_limit
 from exceptions import BugEyeError
 from services.github_service import parse_repo
 
@@ -76,13 +76,13 @@ class ChatResponse(BaseModel):
 # ── Routes ───────────────────────────────────────────────────
 
 @router.get("/", response_class=HTMLResponse, include_in_schema=False)
-def index(request: Request, state: AppState = Depends(get_state)):
-    return templates.TemplateResponse(request, "index.html", {"auth_required": bool(state.settings.access_token)})
+def index(request: Request):
+    return templates.TemplateResponse(request, "index.html")
 
 
 @router.post(
     "/api/review",
-    dependencies=[Depends(require_access_token), Depends(review_rate_limit)],
+    dependencies=[Depends(review_rate_limit)],
     response_class=StreamingResponse,
     responses={200: {"content": {"text/event-stream": {}}, "description": "Server-sent progress events"}},
 )
@@ -103,7 +103,7 @@ def review(body: ReviewRequest, state: AppState = Depends(get_state)) -> Streami
 
 
 @router.post("/api/chat", response_model=ChatResponse,
-             dependencies=[Depends(require_access_token), Depends(chat_rate_limit)])
+             dependencies=[Depends(chat_rate_limit)])
 def chat(body: ChatRequest, state: AppState = Depends(get_state)) -> ChatResponse:
     """Answer a question about a repository that was analysed earlier."""
     answer = answer_question(body.repo, body.question, settings=state.settings, registry=state.registry)

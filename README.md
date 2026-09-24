@@ -68,7 +68,7 @@ BugEye/
 ├── cli.py                  # Command-line runner
 ├── config.py               # Settings from .env
 ├── exceptions.py           # BugEyeError — failures that are safe to show users
-├── dependencies.py         # FastAPI dependencies: app state, access token, rate limits
+├── dependencies.py         # FastAPI dependencies: app state, rate limits
 ├── middleware.py           # Security headers (CSP etc.)
 ├── agents/
 │   ├── orchestrator.py     # Runs the 6 agents in order, streams progress
@@ -139,9 +139,8 @@ All settings are environment variables — see [.env.example](.env.example) for 
 | Variable | Purpose |
 |---|---|
 | `GROQ_API_KEY` | **Required.** LLM access |
-| `ACCESS_TOKEN` | If set, the UI and API require this token. **Set it on public deployments** so strangers can't use up your Groq quota |
 | `GITHUB_TOKEN` | Optional, for PR review rate limits |
-| `REVIEW_LIMIT_PER_HOUR` / `CHAT_LIMIT_PER_HOUR` | Per-client rate limits (`0` disables) |
+| `REVIEW_LIMIT_PER_HOUR` / `CHAT_LIMIT_PER_HOUR` | Per-visitor rate limits — default 5 analyses and 60 questions per hour (`0` disables) |
 | `MAX_CONCURRENT_REVIEWS` | Analyses allowed to run at once |
 | `MAX_CONTEXT_CHARS` | Code sent to the LLM per call |
 
