@@ -1,58 +1,81 @@
-import os
-import json
-from flask import Flask, render_template, request, Response, stream_with_context, jsonify
-from agent import review_pr_stream
-from rag_tools import chat_with_codebase
-from dotenv import load_dotenv
- 
-load_dotenv()
+"""FastAPI app factory and entry point.
 
-app = Flask(__name__)
+Production (Docker):  uvicorn app:app --host 0.0.0.0 --port 7860
+Local dev:            python app.py
+"""
+import logging
+from pathlib import Path
+
+import uvicorn
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
+from config import Settings, get_settings
+from dependencies import AppState
+from exceptions import BugEyeError
+from middleware import SecurityHeadersMiddleware
+from rag.vector_store import IndexRegistry
+from routes.api import router
+
+logger = logging.getLogger(__name__)
+
+BASE_DIR = Path(__file__).resolve().parent
 
 
-@app.route("/")
-def index():
-    return render_template("index.html")
-
-
-@app.route("/review", methods=["GET"])
-def review():
-    repo = request.args.get("repo", "").strip()
-    pr = request.args.get("pr", "").strip()
-
-    if not repo:
-        return {"error": "Please provide a repository"}, 400
-
-    pr_num = int(pr) if pr else None
-
-    def generate():
-        try:
-            for chunk in review_pr_stream(repo, pr_num):
-                yield chunk
-        except Exception as e:
-            yield f"data: {json.dumps({'event': 'error', 'message': str(e)})}\n\n"
-
-    return Response(
-        stream_with_context(generate()),
-        mimetype="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+def create_app(settings: Settings | None = None, registry: IndexRegistry | None = None) -> FastAPI:
+    settings = settings or get_settings()
+    app = FastAPI(
+        title="BugEye",
+        description="Multi-agent AI code review for GitHub repositories",
+        version="2.0.0",
     )
+    app.state.bugeye = AppState.create(settings, registry)
+    app.add_middleware(SecurityHeadersMiddleware)
+    app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
+    app.include_router(router)
+    _register_error_handlers(app)
+    return app
 
 
-@app.route("/chat", methods=["POST"])
-def chat():
-    data = request.get_json()
-    question = data.get("question", "").strip()
+def _register_error_handlers(app: FastAPI) -> None:
+    """Every error response is JSON of the form {"error": "..."}."""
 
-    if not question:
-        return jsonify({"error": "Please provide a question"}), 400
+    @app.exception_handler(BugEyeError)
+    async def bugeye_error(_request: Request, exc: BugEyeError) -> JSONResponse:
+        return JSONResponse({"error": str(exc)}, status_code=exc.status_code)
 
-    try:
-        answer = chat_with_codebase(question)
-        return jsonify({"answer": answer})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    @app.exception_handler(RequestValidationError)
+    async def validation_error(_request: Request, exc: RequestValidationError) -> JSONResponse:
+        return JSONResponse({"error": _validation_message(exc)}, status_code=400)
 
+    @app.exception_handler(StarletteHTTPException)
+    async def http_error(_request: Request, exc: StarletteHTTPException) -> JSONResponse:
+        return JSONResponse({"error": exc.detail}, status_code=exc.status_code, headers=exc.headers)
+
+    @app.exception_handler(Exception)
+    async def unexpected_error(request: Request, exc: Exception) -> JSONResponse:
+        logger.error("Unhandled error on %s", request.url.path, exc_info=exc)
+        return JSONResponse({"error": "Internal server error."}, status_code=500)
+
+
+def _validation_message(exc: RequestValidationError) -> str:
+    errors = exc.errors()
+    if not errors:
+        return "Invalid request."
+    error = errors[0]
+    message = str(error.get("msg", "Invalid value")).removeprefix("Value error, ")
+    if error.get("type") == "value_error":
+        return message  # Our own validators already write complete sentences
+    field = ".".join(str(part) for part in error.get("loc", ()) if part != "body")
+    return f"{field}: {message}" if field else message
+
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+
+app = create_app()
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=7860, debug=False, threaded=True)
+    uvicorn.run(app, host="0.0.0.0", port=get_settings().port)

@@ -8,216 +8,154 @@ app_file: app.py
 pinned: false
 ---
 
-
-
-# 🐛 BugEye — AI-Powered Multi-Agent Code Review System
+# 🐛 BugEye — AI-Powered Multi-Agent Code Review
 
 <div align="center">
 
 ![Python](https://img.shields.io/badge/Python-3.11-blue?style=for-the-badge&logo=python)
-![LangChain](https://img.shields.io/badge/LangChain-1.2-green?style=for-the-badge)
-![LangGraph](https://img.shields.io/badge/LangGraph-Agentic-purple?style=for-the-badge)
+![LangChain](https://img.shields.io/badge/LangChain-1.x-green?style=for-the-badge)
 ![Groq](https://img.shields.io/badge/Groq-LLaMA_3.3-orange?style=for-the-badge)
-![Flask](https://img.shields.io/badge/Flask-2.0-black?style=for-the-badge&logo=flask)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.1xx-009688?style=for-the-badge&logo=fastapi)
 ![ChromaDB](https://img.shields.io/badge/ChromaDB-VectorDB-red?style=for-the-badge)
 
-**An autonomous multi-agent AI system that performs deep code reviews, security vulnerability scanning, and intelligent fix suggestions — powered by RAG, LLMs, and real-time streaming.**
-
-[Demo](#demo) · [Features](#features) · [Architecture](#architecture) · [Setup](#setup) · [Usage](#usage)
+**A pipeline of specialised LLM agents that indexes a GitHub repository with RAG, then produces a code review, a security report and concrete code fixes — streamed live to the browser.**
 
 </div>
 
 ---
 
-## 🚀 What is BugEye?
-
-BugEye is a **production-grade agentic AI application** that analyzes any GitHub repository using a pipeline of specialized AI agents. Each agent has a specific role — from indexing the codebase with RAG to scanning for security vulnerabilities to suggesting actual code fixes.
-
-Unlike simple LLM wrappers, BugEye implements a true **multi-agent orchestration pattern** where agents communicate, critique each other's output, and produce progressively refined results.
-
----
-
 ## ✨ Features
 
-- 🧠 **RAG-Powered Codebase Indexing** — Clones and embeds the entire repository into a vector database using HuggingFace embeddings + ChromaDB
-- 🔒 **Autonomous Security Scanner** — Detects hardcoded secrets, SQL injection, XSS, command injection, insecure auth, and more
-- 📝 **Context-Aware Code Review** — Reviews code with full codebase understanding — not just the diff
-- 🎯 **Self-Critiquing Agent** — A second LLM agent reviews and improves the first agent's output
-- 🔧 **Intelligent Fix Suggester** — Generates actual before/after code replacements with red/green diff view
-- 💬 **RAG Chat Interface** — Ask anything about the codebase in natural language
-- ⚡ **Real-Time Streaming UI** — Server-Sent Events (SSE) stream agent progress live to the browser
-- 🌐 **Flask Web App** — Clean, responsive dark-mode UI — no terminal required
+- 🧠 **RAG indexing** — shallow-clones the repo, splits code into line-numbered chunks, and embeds them locally (`all-MiniLM-L6-v2`) into ChromaDB
+- 🔒 **Security scanner** — searches the index for security-relevant code (secrets, SQL, shell, auth, input handling) and reports findings by severity
+- 📝 **Code review** — reviews the most relevant code, citing real file names and line ranges
+- 🔀 **Pull request review** — give a PR number to review its diff, with related code pulled in as context
+- 🎯 **Critic agent** — checks the draft review against the code and removes unsupported claims
+- 🔧 **Fix suggester** — before/after code replacements with red/green highlighting
+- 💬 **Codebase chat** — ask questions about the indexed repository
+- ⚡ **Live progress** — every pipeline step is streamed to the UI as it happens
+
+> BugEye sends the LLM the **most relevant excerpts** of the repository (plus the full file list), not every file — Groq's token limits make that impossible for real repositories. The amount is configurable with `MAX_CONTEXT_CHARS`.
 
 ---
 
 ## 🏗️ Architecture
 
 ```
-User enters GitHub repo
-        ↓
-┌─────────────────────────────────────────┐
-│           Orchestrator                  │
-│                                         │
-│  ┌──────────┐    ┌──────────────────┐   │
-│  │ RAG Agent│───▶│  ChromaDB Vector │   │
-│  │ (index)  │    │  Store           │   │
-│  └──────────┘    └──────────────────┘   │
-│       │                                 │
-│       ▼                                 │
-│  ┌──────────────┐                       │
-│  │ Fetch Agent  │ ← GitHub API          │
-│  └──────────────┘                       │
-│       │                                 │
-│       ▼                                 │
-│  ┌──────────────┐                       │
-│  │  Security    │ ← CRITICAL/MEDIUM/LOW │
-│  │  Scanner     │                       │
-│  └──────────────┘                       │
-│       │                                 │
-│       ▼                                 │
-│  ┌──────────────┐                       │
-│  │ Review Agent │ ← RAG context aware   │
-│  └──────────────┘                       │
-│       │                                 │
-│       ▼                                 │
-│  ┌──────────────┐                       │
-│  │ Critic Agent │ ← self-improvement    │
-│  └──────────────┘                       │
-│       │                                 │
-│       ▼                                 │
-│  ┌──────────────┐                       │
-│  │ Fix Suggester│ ← before/after diffs  │
-│  └──────────────┘                       │
-└─────────────────────────────────────────┘
-        ↓
-  Results streamed live to browser
-  + RAG Chat enabled
+POST /api/review ──▶ run_review()  (agents/orchestrator.py — yields progress events)
+                        │
+   1. RAG Agent         │  shallow clone → load files → chunk (with line numbers) → embed → Chroma
+   2. Context Agent     │  PR diff (optional) + similarity searches → overview & security excerpts
+   3. Security Scanner  │  LLM call on security-focused excerpts
+   4. Review Agent      │  LLM call on overview excerpts (+ PR diff)
+   5. Critic Agent      │  LLM call: verify the review against the same excerpts   (optional)
+   6. Fix Suggester     │  LLM call: before/after fixes for the reviewed issues    (optional)
+                        ▼
+              Server-Sent Events ──▶ browser (or the CLI)
+
+POST /api/chat ──▶ answer_question()  — searches the repo's index and asks the LLM
 ```
 
----
-
-## 🛠️ Tech Stack
-
-| Layer | Technology |
-|---|---|
-| **LLM** | LLaMA 3.3 70B via Groq API |
-| **Agent Framework** | LangChain + LangGraph (ReAct pattern) |
-| **RAG** | HuggingFace Embeddings + ChromaDB |
-| **Embeddings Model** | `all-MiniLM-L6-v2` (local, no API cost) |
-| **GitHub Integration** | PyGitHub API |
-| **Backend** | Flask + Server-Sent Events (SSE) |
-| **Frontend** | Vanilla JS + Marked.js |
-| **Streaming** | Real-time SSE pipeline |
-
----
-
-## ⚙️ Setup
-
-### 1. Clone the repo
-```bash
-git clone https://github.com/your-username/bugeye
-cd bugeye
-```
-
-### 2. Create virtual environment
-```bash
-python -m venv venv
-venv\Scripts\activate  # Windows
-source venv/bin/activate  # Mac/Linux
-```
-
-### 3. Install dependencies
-```bash
-pip install -r requirements.txt
-```
-
-### 4. Set up environment variables
-```bash
-cp .env.example .env
-```
-
-Edit `.env`:
-```env
-GROQ_API_KEY=your_groq_api_key
-GITHUB_TOKEN=your_github_token
-GROQ_MODEL=llama-3.3-70b-versatile
-```
-
-Get your keys:
-- **Groq API Key** (free) → [console.groq.com](https://console.groq.com)
-- **GitHub Token** → [github.com/settings/tokens](https://github.com/settings/tokens) (needs `repo` scope)
-
-### 5. Run
-```bash
-python app.py
-```
-
-Open **http://127.0.0.1:5000** 🚀
-
----
-
-## 📖 Usage
-
-1. Enter any public GitHub repository (e.g. `panwaar/Portfolio`)
-2. Click **Analyze Repository**
-3. Watch the **multi-agent pipeline** run in real time
-4. View results across 3 tabs:
-   - 📝 **Code Review** — quality issues with file + line references
-   - 🔒 **Security Report** — vulnerabilities by severity (CRITICAL / MEDIUM / LOW)
-   - 🔧 **Code Fixes** — before/after code replacements
-5. Use the **RAG Chat** to ask anything about the codebase
+Indexes are kept in memory per repository (most recent `MAX_INDEXED_REPOS`), so chat always answers about the repository you analysed.
 
 ---
 
 ## 📁 Project Structure
 
 ```
-bugeye/
-├── app.py            # Flask server + SSE streaming endpoints
-├── agent.py          # Multi-agent orchestrator
-├── rag_tools.py      # RAG indexing + codebase chat
-├── github_tools.py   # GitHub API integration
-├── prompts.py        # Agent system prompts
-├── requirements.txt
-├── .env.example
-└── templates/
-    └── index.html    # Frontend UI
+BugEye/
+├── app.py                  # FastAPI app factory + entry point
+├── cli.py                  # Command-line runner
+├── config.py               # Settings from .env
+├── exceptions.py           # BugEyeError — failures that are safe to show users
+├── dependencies.py         # FastAPI dependencies: app state, access token, rate limits
+├── middleware.py           # Security headers (CSP etc.)
+├── agents/
+│   ├── orchestrator.py     # Runs the 6 agents in order, streams progress
+│   ├── chat_agent.py       # Codebase Q&A
+│   └── prompts.py          # System prompt for each agent
+├── services/
+│   ├── github_service.py   # Repo URL parsing, cloning, PR diffs
+│   └── llm_service.py      # Groq client
+├── rag/
+│   ├── code_loader.py      # Read + chunk source files (with line numbers)
+│   ├── vector_store.py     # ChromaDB index per repo
+│   └── retriever.py        # Pick relevant code for each agent
+├── routes/
+│   └── api.py              # /, /api/review (SSE), /api/chat + request models
+├── templates/index.html
+├── static/css/style.css, static/js/app.js
+├── Dockerfile
+├── requirements.txt / requirements-dev.txt
+└── .env.example
 ```
 
 ---
 
-## 🧠 How the Multi-Agent Pipeline Works
+## ⚙️ Setup
 
-BugEye uses the **ReAct (Reason + Act)** agentic pattern via LangGraph:
+```bash
+git clone https://github.com/panwaar/BugEye
+cd BugEye
 
-1. **RAG Agent** — mandatory first step. Clones repo, chunks code files, creates embeddings, stores in ChromaDB. If this fails, pipeline stops — no hallucinated reviews.
-2. **Fetch Agent** — uses RAG context to load relevant codebase sections
-3. **Security Scanner** — specialized LLM agent focused purely on vulnerability detection
-4. **Review Agent** — performs deep code quality analysis with full codebase context
-5. **Critic Agent** — reads the review and improves it (self-critique loop)
-6. **Fix Suggester** — generates concrete before/after code replacements
+python -m venv .venv
+.venv\Scripts\activate          # Windows
+source .venv/bin/activate       # Mac/Linux
 
-Results stream to the browser in real time via **Server-Sent Events**.
+pip install -r requirements.txt
+cp .env.example .env            # then set GROQ_API_KEY
+```
+
+Get a free Groq API key at [console.groq.com](https://console.groq.com). A `GITHUB_TOKEN` is optional — it only raises GitHub API limits for PR review.
+
+### Run the web app
+
+```bash
+python app.py                                  # or: uvicorn app:app --reload --port 7860
+```
+
+Open **http://127.0.0.1:7860**. Interactive API docs are at **/docs**.
+
+### Run from the command line
+
+```bash
+python cli.py panwaar/Portfolio
+python cli.py https://github.com/owner/repo --pr 42 --out reports/
+```
+
+### Docker
+
+```bash
+docker build -t bugeye .
+docker run -p 7860:7860 --env-file .env bugeye
+```
 
 ---
 
-## 🔑 Key Concepts Demonstrated
+## 🔧 Configuration
 
-- **Multi-Agent Orchestration** — coordinating specialized agents in a pipeline
-- **RAG (Retrieval Augmented Generation)** — grounding LLM responses in real codebase data
-- **Agentic AI** — autonomous agents that decide and act without hardcoded logic
-- **Streaming AI** — real-time SSE for live agent progress updates
-- **Self-Critique Pattern** — agents improving their own output
-- **Tool Use** — LLM agents calling GitHub API as tools
+All settings are environment variables — see [.env.example](.env.example) for the full list with defaults. The important ones:
+
+| Variable | Purpose |
+|---|---|
+| `GROQ_API_KEY` | **Required.** LLM access |
+| `ACCESS_TOKEN` | If set, the UI and API require this token. **Set it on public deployments** so strangers can't use up your Groq quota |
+| `GITHUB_TOKEN` | Optional, for PR review rate limits |
+| `REVIEW_LIMIT_PER_HOUR` / `CHAT_LIMIT_PER_HOUR` | Per-client rate limits (`0` disables) |
+| `MAX_CONCURRENT_REVIEWS` | Analyses allowed to run at once |
+| `MAX_CONTEXT_CHARS` | Code sent to the LLM per call |
+
+---
+
+## 🔐 Security notes
+
+- Repository content is treated as untrusted: LLM output is sanitised with DOMPurify before rendering, a strict Content-Security-Policy is sent, prompts instruct the model to ignore instructions embedded in code, and symlinks in cloned repos are never followed.
+- Repository names are strictly validated before cloning; clones are shallow, time-limited and never prompt for credentials.
+- Internal errors are logged server-side; users only see generic messages.
+- Never commit `.env` — it is git-ignored.
 
 ---
 
 ## 📄 License
 
-MIT License — feel free to use and build on this.
-
----
-
-<div align="center">
-Built with ❤️ using LangChain, LangGraph, Groq, and ChromaDB
-</div>
+MIT — see [LICENSE](LICENSE).
