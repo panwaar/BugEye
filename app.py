@@ -15,7 +15,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from config import Settings, get_settings
 from dependencies import AppState
-from exceptions import BugEyeError
+from exceptions import BugEyeError, RateLimitedError
 from middleware import SecurityHeadersMiddleware
 from rag.vector_store import IndexRegistry
 from routes.api import router
@@ -45,7 +45,10 @@ def _register_error_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(BugEyeError)
     async def bugeye_error(_request: Request, exc: BugEyeError) -> JSONResponse:
-        return JSONResponse({"error": str(exc)}, status_code=exc.status_code)
+        body = {"error": str(exc)}
+        if isinstance(exc, RateLimitedError):
+            body["code"] = "rate_limited"  # The UI shows these as a toast
+        return JSONResponse(body, status_code=exc.status_code)
 
     @app.exception_handler(RequestValidationError)
     async def validation_error(_request: Request, exc: RequestValidationError) -> JSONResponse:

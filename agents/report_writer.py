@@ -27,8 +27,16 @@ class ReviewStats:
     lines_reviewed: int
     skipped_files: list[str] = field(default_factory=list)  # Over the size limit
     failed_files: list[str] = field(default_factory=list)  # Their review request failed
+    review_error: str = ""  # Why those files failed
     unsupported: int = 0  # Quoted code that doesn't exist in the repository
     rejected: int = 0  # Rejected by the verifier
+    unverified: int = 0  # The verifier couldn't run for these, so they are not shown
+    verify_error: str = ""  # Why the verifier couldn't run
+
+    @property
+    def complete(self) -> bool:
+        """Everything was reviewed and every finding was double-checked (safe to cache)."""
+        return not self.failed_files and not self.unverified
 
 
 def render_reports(findings: list[Finding], files: dict[str, str], stats: ReviewStats) -> dict[str, str]:
@@ -48,11 +56,14 @@ def _summary(stats: ReviewStats) -> str:
     discarded = stats.unsupported + stats.rejected
     if discarded:
         lines.append(f"{discarded} candidate findings were discarded because the code did not support them.")
+    if stats.unverified:
+        lines.append(f"{stats.unverified} findings could not be double-checked and are not shown "
+                     f"({_sentence(stats.verify_error)}).")
     if stats.skipped_files:
         lines.append(f"Not reviewed (over the size limit): {_list_paths(stats.skipped_files)}. "
                      "Raise MAX_REVIEW_CHARS to include them.")
     if stats.failed_files:
-        lines.append(f"Review failed for: {_list_paths(stats.failed_files)}.")
+        lines.append(f"Not reviewed ({_sentence(stats.review_error)}): {_list_paths(stats.failed_files)}.")
     return "\n\n".join(lines) + "\n\n"
 
 
@@ -96,8 +107,12 @@ def _fixes_section(findings: list[Finding], files: dict[str, str]) -> str:
 def _location(finding: Finding) -> str:
     lines = (f"line {finding.start_line}" if finding.start_line == finding.end_line
              else f"lines {finding.start_line}-{finding.end_line}")
-    unchecked = " (not double-checked)" if not finding.double_checked else ""
-    return f"`{finding.file}` {lines}{unchecked}"
+    return f"`{finding.file}` {lines}"
+
+
+def _sentence(message: str) -> str:
+    """An error message shaped to sit inside parentheses mid-sentence."""
+    return message.rstrip(". ") or "unknown error"
 
 
 def _code_block(path: str, code: str) -> str:

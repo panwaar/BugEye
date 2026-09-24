@@ -62,12 +62,7 @@ def apply_verdicts(group: list[Finding], data: dict) -> list[Finding]:
             confirmed.add(int(verdict.get("id")))
         except (TypeError, ValueError):
             continue
-    kept = []
-    for i, finding in enumerate(group, start=1):
-        if i in confirmed:
-            finding.double_checked = True
-            kept.append(finding)
-    return kept
+    return [finding for i, finding in enumerate(group, start=1) if i in confirmed]
 
 
 def verify_group(group: list[Finding], plan: ReviewPlan, batch_chars: int,

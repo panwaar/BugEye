@@ -9,7 +9,10 @@ from dotenv import load_dotenv
 @dataclass(frozen=True)
 class Settings:
     groq_api_key: str | None = None
-    groq_model: str = "openai/gpt-oss-120b"
+    groq_model: str = "openai/gpt-oss-120b"  # Finds issues
+    # Double-checks findings. A different model uses a separate Groq daily quota; in testing, Qwen
+    # rejected false findings that the gpt-oss models accepted.
+    verify_model: str = "qwen/qwen3.8-27b"
     github_token: str | None = None
     embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
 
@@ -20,6 +23,8 @@ class Settings:
     chunk_size: int = 1000
     chunk_overlap: int = 100
     max_indexed_repos: int = 5
+    # Finished reviews kept in memory, keyed by commit: re-reviewing an unchanged repo costs no tokens
+    review_cache_size: int = 20
 
     # Full review: every source file is sent to the LLM, in batches of at most review_batch_chars
     # (keeps each request inside Groq's token limits), up to max_review_chars per repository.

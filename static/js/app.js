@@ -1,7 +1,8 @@
 'use strict';
 
 const AGENTS = ['rag', 'plan', 'review', 'verify', 'report'];
-const TERMINAL_EVENTS = new Set(['complete', 'error', 'rag_failed']);
+const TERMINAL_EVENTS = new Set(['complete', 'error', 'rag_failed', 'quota_exhausted']);
+const QUOTA_TOAST_TITLE = 'Groq API quota exhausted';
 const GREETING = 'Codebase indexed. Ask me anything about the code.';
 
 // Repo whose index the chat talks to (the normalised name returned by the server).
@@ -100,6 +101,50 @@ function hideBanners() {
   $('rag-banner').classList.remove('active');
 }
 
+// ── Toasts ───────────────────────────────────────────────────
+
+function showToast(title, message, timeoutMs = 15000) {
+  // One toast per title: a repeat replaces the old one instead of stacking duplicates.
+  document.querySelectorAll('.toast').forEach((old) => {
+    if (old.dataset.title === title) old.remove();
+  });
+  const toast = document.createElement('div');
+  toast.className = 'toast';
+  toast.dataset.title = title;
+  toast.setAttribute('role', 'alert');
+  const body = document.createElement('div');
+  body.className = 'toast-body';
+  const heading = document.createElement('strong');
+  heading.textContent = title;
+  const text = document.createElement('p');
+  text.textContent = message;
+  body.append(heading, text);
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'toast-close';
+  close.setAttribute('aria-label', 'Dismiss');
+  close.textContent = '×';
+  toast.append(body, close);
+  $('toasts').appendChild(toast);
+  requestAnimationFrame(() => toast.classList.add('visible'));
+
+  const dismiss = () => {
+    clearTimeout(timer);
+    toast.classList.remove('visible');
+    setTimeout(() => toast.remove(), 250);
+  };
+  const timer = setTimeout(dismiss, timeoutMs);
+  close.addEventListener('click', dismiss);
+}
+
+function showQuotaExhausted(message) {
+  // Stop every running stage so nothing looks like it is still working.
+  AGENTS.forEach((agent) => {
+    if ($(`card-${agent}`).classList.contains('running')) setAgentState(agent, 'failed', 'Stopped: quota exhausted');
+  });
+  showToast(QUOTA_TOAST_TITLE, message);
+}
+
 function setBusy(busy) {
   const btn = $('btn');
   btn.disabled = busy;
@@ -110,12 +155,13 @@ function setBusy(busy) {
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' };
 
+// Reads the server's {"error": ..., "code": ...} body as an Error (code "rate_limited" = quota).
 async function errorFrom(response) {
-  try {
-    const data = await response.json();
-    if (data && data.error) return data.error;
-  } catch (_) { /* not JSON */ }
-  return `Request failed (HTTP ${response.status}).`;
+  let data = null;
+  try { data = await response.json(); } catch (_) { /* not JSON */ }
+  const error = new Error((data && data.error) || `Request failed (HTTP ${response.status}).`);
+  error.code = data && data.code;
+  return error;
 }
 
 // POSTs to the review endpoint and calls onEvent for each server-sent event.
@@ -125,7 +171,7 @@ async function streamReview(repo, pr, onEvent) {
     headers: JSON_HEADERS,
     body: JSON.stringify({ repo, pr }),
   });
-  if (!response.ok) throw new Error(await errorFrom(response));
+  if (!response.ok) throw await errorFrom(response);
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -158,6 +204,7 @@ function handleEvent(event) {
       $('rag-banner').classList.add('active');
       break;
     case 'error': showError(event.message); break;
+    case 'quota_exhausted': showQuotaExhausted(event.message); break;
     case 'complete': showResults(event); break;
   }
 }
@@ -194,7 +241,8 @@ async function startReview(event) {
     });
     if (!finished) showError('The connection closed before the analysis finished. Please try again.');
   } catch (err) {
-    showError(err.message || 'Could not reach the server. Please try again.');
+    if (err.code === 'rate_limited') showQuotaExhausted(err.message);
+    else showError(err.message || 'Could not reach the server. Please try again.');
   } finally {
     setBusy(false);
   }
@@ -248,8 +296,13 @@ async function sendChat(event) {
       body: JSON.stringify({ repo: currentRepo, question }),
     });
     typing.remove();
-    if (response.ok) addMessage((await response.json()).answer, false);
-    else addMessage(`Error: ${await errorFrom(response)}`, false);
+    if (response.ok) {
+      addMessage((await response.json()).answer, false);
+    } else {
+      const error = await errorFrom(response);
+      if (error.code === 'rate_limited') showToast(QUOTA_TOAST_TITLE, error.message);
+      addMessage(`Error: ${error.message}`, false);
+    }
   } catch (_) {
     typing.remove();
     addMessage('Something went wrong. Please try again.', false);

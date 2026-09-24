@@ -92,7 +92,8 @@ def review(body: ReviewRequest, state: AppState = Depends(get_state)) -> Streami
         raise BugEyeError("The server is busy with other analyses. Try again in a minute.", status_code=503)
 
     release = _release_once(state.review_slots)
-    events = run_review(body.repo, body.pr, settings=state.settings, registry=state.registry)
+    events = run_review(body.repo, body.pr, settings=state.settings, registry=state.registry,
+                        cache=state.review_cache)
     return StreamingResponse(
         _sse(events, on_close=release),
         media_type="text/event-stream",

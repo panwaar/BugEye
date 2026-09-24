@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 from fastapi import Request
 
+from agents.review_cache import ReviewCache
 from config import Settings
 from exceptions import BugEyeError
 from rag.vector_store import IndexRegistry
@@ -60,6 +61,7 @@ class AppState:
 
     settings: Settings
     registry: IndexRegistry
+    review_cache: ReviewCache
     review_limiter: RateLimiter
     chat_limiter: RateLimiter
     review_slots: threading.BoundedSemaphore
@@ -69,6 +71,7 @@ class AppState:
         return cls(
             settings=settings,
             registry=registry if registry is not None else IndexRegistry(settings.max_indexed_repos),
+            review_cache=ReviewCache(settings.review_cache_size),
             review_limiter=RateLimiter(settings.review_limit_per_hour),
             chat_limiter=RateLimiter(settings.chat_limit_per_hour),
             review_slots=threading.BoundedSemaphore(max(1, settings.max_concurrent_reviews)),

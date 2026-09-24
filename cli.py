@@ -27,6 +27,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
+    if args.out and args.out.exists() and not args.out.is_dir():
+        # Checked up front so a long review isn't lost to a crash at the very end.
+        console.print(f"[bold red]Error:[/bold red] --out must be a directory, but {args.out} is a file.")
+        return 2
     logging.basicConfig(level=logging.WARNING)
     settings = get_settings()
 
@@ -42,7 +46,7 @@ def main(argv: list[str] | None = None) -> int:
             console.print(f"  [green]done:[/green] {event['message']}")
         elif kind == "agent_failed":
             console.print(f"  [red]failed:[/red] {event['message']}")
-        elif kind in ("error", "rag_failed"):
+        elif kind in ("error", "rag_failed", "quota_exhausted"):
             console.print(f"\n[bold red]Error:[/bold red] {event['message']}")
             return 1
         elif kind == "complete":

@@ -1,9 +1,11 @@
 """Finding the code chunks relevant to a chat question and formatting them for the LLM."""
+import re
 from collections.abc import Sequence
 
 from langchain_core.documents import Document
 
 from rag.vector_store import RepoIndex
+
 
 def retrieve(index: RepoIndex, queries: Sequence[str], *, k_per_query: int = 4, max_chars: int) -> list[Document]:
     """Run several queries and merge results round-robin (best hit of each query first),
@@ -35,5 +37,12 @@ def format_location(chunk: Document) -> str:
 def format_chunks(chunks: Sequence[Document]) -> str:
     if not chunks:
         return "(no relevant code found)"
-    return "\n\n".join(f"### {format_location(c)}\n```\n{c.page_content}\n```" for c in chunks)
+    return "\n\n".join(f"### {format_location(c)}\n{_fenced(c.page_content)}" for c in chunks)
+
+
+def _fenced(code: str) -> str:
+    # A longer fence than any backtick run inside the code, so embedded ``` can't close it early.
+    longest = max((len(run) for run in re.findall(r"`+", code)), default=0)
+    fence = "`" * max(3, longest + 1)
+    return f"{fence}\n{code}\n{fence}"
 

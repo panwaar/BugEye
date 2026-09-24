@@ -27,7 +27,9 @@ pinned: false
 ## ✨ Features
 
 - 📂 **Full-repository review** — every source file is sent to the model in full, in batches sized to fit Groq's token limits
-- ✅ **Verified findings** — each finding must quote real code; quotes that don't exist in the repo are dropped, and a skeptical second model pass rejects unsupported claims
+- ✅ **Verified findings** — each finding must quote real code; quotes that don't exist in the repo are dropped, and a second, skeptical model (a different one from the reviewer) rejects unsupported claims. Findings that couldn't be verified are never shown
+- 🛑 **Quota-aware** — when the Groq quota runs out the run stops (no partial or guessed results) and a toast says when it frees up; later requests fail fast without calling Groq
+- ♻️ **Cached reviews** — re-reviewing an unchanged commit returns instantly and uses no tokens
 - 📍 **Exact locations** — file and line numbers are computed from the real file, never taken from the model
 - 🔒 **Security report** — injection, XSS, secrets, auth and other vulnerabilities, by severity
 - 🔧 **Code fixes** — the "current code" shown is copied from the file; the model only writes the replacement
@@ -47,7 +49,7 @@ POST /api/review ──▶ run_review()  (agents/orchestrator.py — yields prog
                         │  plus a map of the names each file defines
    3. Reviewer          │  one LLM call per batch → JSON findings, each quoting the code it is about
    4. Verifier          │  drop findings whose quote isn't in the repo → dedupe →
-                        │  skeptical LLM pass with the real surrounding code
+                        │  skeptical pass by a second model (VERIFY_MODEL) with the real code
    5. Report Writer     │  plain Python: Markdown reports built only from verified findings
                         ▼
               Server-Sent Events ──▶ browser (or the CLI)
@@ -142,6 +144,7 @@ All settings are environment variables — see [.env.example](.env.example) for 
 | Variable | Purpose |
 |---|---|
 | `GROQ_API_KEY` | **Required.** LLM access |
+| `GROQ_MODEL` / `VERIFY_MODEL` | Reviewer and verifier models (separate models use separate Groq daily quotas) |
 | `GITHUB_TOKEN` | Optional, for PR review rate limits |
 | `REVIEW_LIMIT_PER_HOUR` / `CHAT_LIMIT_PER_HOUR` | Per-visitor rate limits — default 5 analyses and 60 questions per hour (`0` disables) |
 | `MAX_CONCURRENT_REVIEWS` | Analyses allowed to run at once |

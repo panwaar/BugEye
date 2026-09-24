@@ -18,8 +18,6 @@ class Finding:
     # Filled in by locate_findings() from the real file, never taken from the model:
     start_line: int = 0
     end_line: int = 0
-    # False when the verifier couldn't run for this finding (it is still shown, marked as such)
-    double_checked: bool = False
 
     @property
     def rank(self) -> int:

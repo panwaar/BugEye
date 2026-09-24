@@ -67,6 +67,18 @@ def _clone(repo_name: str, dest: str, timeout: int) -> None:
         raise BugEyeError(f"Could not clone {repo_name}. Check that the repository exists and is public.")
 
 
+def head_commit(repo_path: str) -> str | None:
+    """The commit a clone is at, or None if git can't tell."""
+    try:
+        result = subprocess.run(["git", "-C", repo_path, "rev-parse", "HEAD"],
+                                capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip() or None
+
+
 def _make_writable_and_retry(func, path, _exc_info):
     # Git marks pack files read-only, which makes rmtree fail on Windows.
     try:
