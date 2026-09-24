@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 @dataclass(frozen=True)
 class Settings:
     groq_api_key: str | None = None
-    groq_model: str = "llama-3.3-70b-versatile"
+    groq_model: str = "openai/gpt-oss-120b"
     github_token: str | None = None
     # When set, the web UI and API require this token in the X-Access-Token header.
     access_token: str | None = None

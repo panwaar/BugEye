@@ -14,7 +14,7 @@ pinned: false
 
 ![Python](https://img.shields.io/badge/Python-3.11-blue?style=for-the-badge&logo=python)
 ![LangChain](https://img.shields.io/badge/LangChain-1.x-green?style=for-the-badge)
-![Groq](https://img.shields.io/badge/Groq-LLaMA_3.3-orange?style=for-the-badge)
+![Groq](https://img.shields.io/badge/Groq-GPT--OSS_120B-orange?style=for-the-badge)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.1xx-009688?style=for-the-badge&logo=fastapi)
 ![ChromaDB](https://img.shields.io/badge/ChromaDB-VectorDB-red?style=for-the-badge)
 
